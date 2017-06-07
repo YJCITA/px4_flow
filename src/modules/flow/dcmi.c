@@ -485,7 +485,7 @@ void dcmi_clock_init()
 void dcmi_hw_init(void)
 {
 	uint16_t image_size = global_data.param[PARAM_IMAGE_WIDTH] * global_data.param[PARAM_IMAGE_HEIGHT];
-
+	// 定义了三个缓冲区用来存储采集到的图像
 	/* Reset image buffers */
 	for (int i = 0; i < image_size; i++) {
 		dcmi_image_buffer_8bit_1 [i] = 0;

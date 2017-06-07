@@ -293,7 +293,7 @@ int main(void)
 		image_buffer_8bit_1[i] = 0;
 		image_buffer_8bit_2[i] = 0;
 	}
-
+	// 接下来定义了两个指针用来指向当前帧图像和上一帧图像
 	uint8_t * current_image = image_buffer_8bit_1;
 	uint8_t * previous_image = image_buffer_8bit_2;
 
@@ -310,6 +310,7 @@ int main(void)
 	sonar_config();
 
 	/* reset/start timers */
+	// 用来对各操作进行分频处理，在timer_update_ms中统一处理
 	timer[TIMER_SONAR] = SONAR_TIMER_COUNT;
 	timer[TIMER_SYSTEM_STATE] = SYSTEM_STATE_COUNT;
 	timer[TIMER_RECEIVE] = SYSTEM_STATE_COUNT / 2;
@@ -347,9 +348,9 @@ int main(void)
 	/* main loop */
 	while (1)
 	{
-                PROBE_1(false);
-                uavcan_run();
-                PROBE_1(true);
+		PROBE_1(false);
+		uavcan_run();
+		PROBE_1(true);
 		/* reset flow buffers if needed */
 		if(buffer_reset_needed)
 		{
@@ -364,6 +365,7 @@ int main(void)
 		}
 
 		/* calibration routine */
+		// 一个传输全部图像的函数，如果地面站选择参数vedio only那么就会进入这个函数，并且不再进行之后的计算，光流只是个图像传输的功能
 		if(FLOAT_AS_BOOL(global_data.param[PARAM_VIDEO_ONLY]))
 		{
 			while(FLOAT_AS_BOOL(global_data.param[PARAM_VIDEO_ONLY]))
@@ -397,19 +399,21 @@ int main(void)
 			LEDOff(LED_COM);
 		}
 
+		// 图像大小的设置
 		uint16_t image_size = global_data.param[PARAM_IMAGE_WIDTH] * global_data.param[PARAM_IMAGE_HEIGHT];
 
 		/* new gyroscope data */
 		float x_rate_sensor, y_rate_sensor, z_rate_sensor;
 		int16_t gyro_temp;
-		gyro_read(&x_rate_sensor, &y_rate_sensor, &z_rate_sensor,&gyro_temp);
+		gyro_read(&x_rate_sensor, &y_rate_sensor, &z_rate_sensor, &gyro_temp);
 
 		/* gyroscope coordinate transformation */
+		// 坐标转换
 		float x_rate = y_rate_sensor; // change x and y rates
 		float y_rate = - x_rate_sensor;
 		float z_rate = z_rate_sensor; // z is correct
 
-		/* calculate focal_length in pixel */
+		/* calculate focal_length in pixel */ // focal_length_px是为了小孔成像映射到真实机体速度用的
 		const float focal_length_px = (global_data.param[PARAM_FOCAL_LENGTH_MM]) / (4.0f * 6.0f) * 1000.0f; //original focal lenght: 12mm pixelsize: 6um, binning 4 enabled
 
 		/* get sonar data */
@@ -421,9 +425,8 @@ int main(void)
 			sonar_distance_raw = 0.0f;
 		}
 
-		/* compute optical flow */
-		if (FLOAT_EQ_INT(global_data.param[PARAM_SENSOR_POSITION], BOTTOM))
-		{
+		/* compute optical flow */ // 判断光流是否下视
+		if (FLOAT_EQ_INT(global_data.param[PARAM_SENSOR_POSITION], BOTTOM)){
 			/* copy recent image to faster ram */
 			dma_copy_image_buffers(&current_image, &previous_image, image_size, 1);
 
@@ -475,9 +478,7 @@ int main(void)
 					velocity_x_lp = (1.0f - global_data.param[PARAM_BOTTOM_FLOW_WEIGHT_NEW]) * velocity_x_lp;
 					velocity_y_lp = (1.0f - global_data.param[PARAM_BOTTOM_FLOW_WEIGHT_NEW]) * velocity_y_lp;
 				}
-			}
-			else
-			{
+			}else{
 				/* taking flow as zero */
 				velocity_x_lp = (1.0f - global_data.param[PARAM_BOTTOM_FLOW_WEIGHT_NEW]) * velocity_x_lp;
 				velocity_y_lp = (1.0f - global_data.param[PARAM_BOTTOM_FLOW_WEIGHT_NEW]) * velocity_y_lp;
@@ -496,21 +497,17 @@ int main(void)
 		if (FLOAT_EQ_INT(global_data.param[PARAM_SENSOR_POSITION], BOTTOM))
 		{
 			/* send bottom flow if activated */
-
 			float ground_distance = 0.0f;
-
 
 			if(FLOAT_AS_BOOL(global_data.param[PARAM_SONAR_FILTERED]))
 			{
 				ground_distance = sonar_distance_filtered;
-			}
-			else
-			{
+			}else{
 				ground_distance = sonar_distance_raw;
 			}
 
-                        uavcan_define_export(i2c_data, legacy_12c_data_t, ccm);
-                        uavcan_define_export(range_data, range_data_t, ccm);
+			uavcan_define_export(i2c_data, legacy_12c_data_t, ccm);
+			uavcan_define_export(range_data, range_data_t, ccm);
 			uavcan_timestamp_export(i2c_data);
                         uavcan_assign(range_data.time_stamp_utc, i2c_data.time_stamp_utc);
 			//update I2C transmitbuffer
@@ -518,24 +515,21 @@ int main(void)
 			{
 				update_TX_buffer(pixel_flow_x, pixel_flow_y, velocity_x_sum/valid_frame_count, velocity_y_sum/valid_frame_count, qual,
 						ground_distance, x_rate, y_rate, z_rate, gyro_temp, uavcan_use_export(i2c_data));
-			}
-			else
-			{
+			}else{
 				update_TX_buffer(pixel_flow_x, pixel_flow_y, 0.0f, 0.0f, qual,
-						ground_distance, x_rate, y_rate, z_rate, gyro_temp, uavcan_use_export(i2c_data));
+				ground_distance, x_rate, y_rate, z_rate, gyro_temp, uavcan_use_export(i2c_data));
 			}
 	                PROBE_2(false);
-                        uavcan_publish(range, 40, range_data);
+                    uavcan_publish(range, 40, range_data);
 	                PROBE_2(true);
 
-                        PROBE_3(false);
-                        uavcan_publish(flow, 40, i2c_data);
-                        PROBE_3(true);
+                    PROBE_3(false);
+                    uavcan_publish(flow, 40, i2c_data);
+                    PROBE_3(true);
 
             //serial mavlink  + usb mavlink output throttled
 			if (counter % (uint32_t)global_data.param[PARAM_BOTTOM_FLOW_SERIAL_THROTTLE_FACTOR] == 0)//throttling factor
 			{
-
 				float flow_comp_m_x = 0.0f;
 				float flow_comp_m_y = 0.0f;
 
@@ -543,16 +537,12 @@ int main(void)
 				{
 					flow_comp_m_x = velocity_x_lp;
 					flow_comp_m_y = velocity_y_lp;
-				}
-				else
-				{
+				}else{
 					if(valid_frame_count>0)
 					{
 						flow_comp_m_x = velocity_x_sum/valid_frame_count;
 						flow_comp_m_y = velocity_y_sum/valid_frame_count;
-					}
-					else
-					{
+					}else{
 						flow_comp_m_x = 0.0f;
 						flow_comp_m_y = 0.0f;
 					}
@@ -592,10 +582,9 @@ int main(void)
 					lpos.vz = 0;
 				}
 
-				if (FLOAT_AS_BOOL(global_data.param[PARAM_USB_SEND_FLOW]))
-				{
+				if (FLOAT_AS_BOOL(global_data.param[PARAM_USB_SEND_FLOW])){
 					mavlink_msg_optical_flow_send(MAVLINK_COMM_2, get_boot_time_us(), global_data.param[PARAM_SENSOR_ID],
-							pixel_flow_x_sum * 10.0f, pixel_flow_y_sum * 10.0f,
+						pixel_flow_x_sum * 10.0f, pixel_flow_y_sum * 10.0f,
 						flow_comp_m_x, flow_comp_m_y, qual, ground_distance);
 
 
@@ -607,8 +596,7 @@ int main(void)
 				}
 
 
-				if(FLOAT_AS_BOOL(global_data.param[PARAM_USB_SEND_GYRO]))
-				{
+				if(FLOAT_AS_BOOL(global_data.param[PARAM_USB_SEND_GYRO])){
 					mavlink_msg_debug_vect_send(MAVLINK_COMM_2, "GYRO", get_boot_time_us(), x_rate, y_rate, z_rate);
 				}
 
@@ -631,14 +619,12 @@ int main(void)
 		}
 
 		/* forward flow from other sensors */
-		if (counter % 2)
-		{
+		if (counter % 2){
 			communication_receive_forward();
 		}
 
 		/* send system state, receive commands */
-		if (send_system_state_now)
-		{
+		if (send_system_state_now){
 			/* every second */
 			if (FLOAT_AS_BOOL(global_data.param[PARAM_SYSTEM_SEND_STATE]))
 			{
@@ -648,8 +634,7 @@ int main(void)
 		}
 
 		/* receive commands */
-		if (receive_now)
-		{
+		if (receive_now){
 			/* test every second */
 			communication_receive();
 			communication_receive_usb();
@@ -657,18 +642,15 @@ int main(void)
 		}
 
 		/* sending debug msgs and requested parameters */
-		if (send_params_now)
-		{
+		if (send_params_now){
 			debug_message_send_one();
 			communication_parameter_send();
 			send_params_now = false;
 		}
 
 		/* send local position estimate, for testing only, doesn't account for heading */
-		if (send_lpos_now)
-		{
-			if (FLOAT_AS_BOOL(global_data.param[PARAM_SYSTEM_SEND_LPOS]))
-			{
+		if (send_lpos_now){
+			if (FLOAT_AS_BOOL(global_data.param[PARAM_SYSTEM_SEND_LPOS])){
 				mavlink_msg_local_position_ned_send(MAVLINK_COMM_2, timer_ms, lpos.x, lpos.y, lpos.z, lpos.vx, lpos.vy, lpos.vz);
 			}
 			send_lpos_now = false;
@@ -697,9 +679,8 @@ int main(void)
 					100);
 			LEDToggle(LED_COM);
 			uint16_t frame = 0;
-			for (frame = 0; frame < image_size_send / MAVLINK_MSG_ENCAPSULATED_DATA_FIELD_DATA_LEN + 1; frame++)
-			{
-				mavlink_msg_encapsulated_data_send(MAVLINK_COMM_2, frame, &((uint8_t *) current_image)[frame * MAVLINK_MSG_ENCAPSULATED_DATA_FIELD_DATA_LEN]);
+			for (frame = 0; frame < image_size_send / MAVLINK_MSG_ENCAPSULATED_DATA_FIELD_DATA_LEN + 1; frame++){
+				mavlink_msg_encapsulated_data_send(MAVLINK_COMM_2, frame, &((uint8_t *) previous_image)[frame * MAVLINK_MSG_ENCAPSULATED_DATA_FIELD_DATA_LEN]);
 			}
 
 			send_image_now = false;
